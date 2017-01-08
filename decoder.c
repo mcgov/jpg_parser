@@ -29,7 +29,7 @@ void toggle_single(bool* pointer)
 	 bool** ptr = bools;
 	 while ( (*ptr) != NULL )
 	 {
-			if ((*ptr) == pointer) {(**ptr) = true;}
+			if ((*ptr) == pointer) {(**ptr) ^= true;}
 			ptr++;
 	 }
 }
@@ -137,13 +137,11 @@ void _JFIF_APPO(int fd){
 
 }
 void _APPO(int fd){
-if ( SOI || JFIF_APPO){
+	/* pick which type we're dealing with */
+	
 		_JFIF_APPO(fd);
-	}
-	else if (SOI && JFIF_APPO )
-	{
-		_JFXX_APPO();			
-	}
+		//_JFXX_APPO();			//NOTE: this is wrong but ill fix later
+	
 }
 
 void _COMMENT(int fd){
