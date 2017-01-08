@@ -169,7 +169,7 @@ void _APPN(int fd, uint8_t byte)
 		while ( i < section_size) {
 			printf("%02hhx ", data[i++]);
 			if (i % 16 == 0){
-				printf("\n");
+				printf("\n"); 
 			}
 		}
 		printf("\n");
