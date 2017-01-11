@@ -34,7 +34,140 @@ void toggle_single(bool* pointer)
 	 }
 }
 
-void _SOI(){
+
+
+#define TERM_E "\033["
+#define END_M "m"
+#define WRAP(x) TERM_E x END_M
+#define BOLD  WRAP("1")
+#define RESET WRAP("0")
+#define RED   WRAP("31")
+#define GREEN WRAP("32")
+
+#define COLORIZE(code,text) code text RESET
+
+
+#define ERROR_CODE(shrt) (0xFFEE0000|shrt)
+#define LENGTH_ZERO (ERROR_CODE( 0x0001 ))
+#define READ_FAILED (ERROR_CODE( 0x0002 ))
+#define OUT_OF_MEMORY ( ERROR_CODE(0x0003) )
+
+void _ERROR(int error_type, const char* msg)
+{
+	if (msg != NULL){
+		printf("%s %s line: %d\n",msg, __func__, __LINE__ );
+		goto error_end_lbl;
+	}
+	else{
+		printf("ERROR: ");
+		switch (error_type)
+		{
+			case LENGTH_ZERO:
+				printf("LENGTH OF SECTION WAS 0");
+				break;
+			case READ_FAILED:
+				printf("A read failed");
+				break;
+			case OUT_OF_MEMORY:
+				printf("out of memory: ");
+
+		}
+		printf(" %s %d\n", __func__, __LINE__);
+	}
+	error_end_lbl:
+		exit(error_type);
+}
+
+char force_printable( uint8_t c )
+{
+	if ( c >= 0x20 && c <= 0x7E )
+		return c;
+	else
+		return ' ';
+}
+#define forcep(c) (force_printable((c)))
+
+void read_print_section_data(int fd, uint16_t length)
+{
+	if (length == 0){
+		_ERROR(LENGTH_ZERO, NULL);
+	}
+	int i = 0;
+	uint8_t bb[8];
+	printf(GREEN);
+	while ((length - 8) > 0){
+
+		if (read(fd,bb,8) == 8){
+			printf( 
+				"%02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx "
+				"%02c %02c %02c %02c %02c %02c %02c %02c\n",
+				bb[0], bb[1],bb[2],bb[3],bb[4],bb[5],bb[6],bb[7],
+				forcep(bb[0]),forcep(bb[1]),forcep(bb[2]),forcep(bb[3]),
+				forcep(bb[4]),forcep(bb[5]),forcep(bb[6]),forcep(bb[7]) 
+				);
+		}
+		else{
+			_ERROR(READ_FAILED,NULL);
+		}
+		length -= 8;
+	}
+	if ( read(fd,bb,length) != length)
+	{
+		_ERROR(READ_FAILED,NULL);
+	}
+	uint16_t copy = length;
+	i = 0;
+	while ( length-- > 0 )
+	{
+		printf("%02hhx ",bb[i++]);
+	}
+	i = 0;
+	while( copy --> 0){
+		printf("%02c ",bb[i++]);
+
+	}
+	printf(RESET);
+	printf("\n");
+}
+
+void print_section_data(uint8_t* section, uint16_t length)
+{
+	if (length == 0){
+		_ERROR(LENGTH_ZERO, NULL);
+	}
+	int i = 0;
+	uint8_t* bb = section;
+	printf(GREEN);
+	while ((length - 8) > 0){
+			printf( 
+				"%02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx "
+				"%1c%1c%1c%1c%1c%1c%1c%1c\n",
+				bb[0], bb[1],bb[2],bb[3],bb[4],bb[5],bb[6],bb[7],
+				forcep(bb[0]),forcep(bb[1]),forcep(bb[2]),forcep(bb[3]),
+				forcep(bb[4]),forcep(bb[5]),forcep(bb[6]),forcep(bb[7]) 
+				);
+		
+		length -= 8;
+		bb+= 8;
+	}
+	uint16_t copy = length;
+	i = 0;
+	while ( length-- > 0 )
+	{
+		printf("%02hhx ",bb[i++]);
+	}
+	i = 0;
+	while( copy --> 0){
+		printf("%02c ",bb[i++]);
+
+	}
+	printf(RESET);
+	printf("\n");
+
+}
+
+void _SOI()
+{
 	if(!SOI)
 	{
 		printf("start of image\n");
@@ -144,8 +277,38 @@ void _APPO(int fd){
 	
 }
 
+struct comment{
+	uint16_t length;
+	uint8_t data[0];
+};
+
 void _COMMENT(int fd){
 	printf("Comment found\n");
+	struct comment c;
+	if( 0 < read(fd, &c, 2))
+	{
+		c.length = SHORT(c.length);
+		if (c.length <= 2){
+			//wat is this shit.
+			exit(-2);
+		}
+		uint8_t* comment_text = calloc(c.length,1);
+		if (!comment_text){
+			printf("Couldn't malloc comment_text\n");
+			exit(-1);
+		}
+		else{
+			int bytes = read(fd,comment_text,c.length-sizeof(c));
+			if (bytes != c.length-2 ){
+				printf("Couldn't read all comment data...\n");
+				exit(-1);
+			}
+			printf("COMMENT: %s\n",comment_text); //should be null terminated...
+			return;
+		}
+
+	}
+	exit(-1);
 }
 
 struct APPN_data{
@@ -164,18 +327,8 @@ void _APPN(int fd, uint8_t byte)
 		uint16_t section_size = appn.length - sizeof(appn);
 		uint8_t* data = malloc(section_size+1);
 		read(fd,data,section_size);
-		while ( i < section_size) {
-			printf("%02hhx ", data[i++]);
-			if (i % 16 == 0){
-				printf("\n"); 
-			}
-		}
-		printf("\n");
-		i = 0 ;
-		while ( i < section_size) {
-			printf("%c", data[i++]);
-		}
-		printf("\n");
+		print_section_data(data,section_size);
+
 	} else{
 		exit(-1);
 	}
@@ -265,6 +418,31 @@ void _SOF2(int fd){
 }
 
 
+struct app13_data{
+	uint16_t length;
+	uint8_t data[0];
+
+};
+
+void _APP13(int fd){
+	struct app13_data app = {0};
+	uint8_t* data;
+	if ( read(fd,&app,2) > 0 ){
+		app.length = SHORT(app.length);
+		data = calloc(app.length, 1);
+		if (! data ){
+			_ERROR(OUT_OF_MEMORY,NULL);
+		}
+		if (read(fd,data,app.length-2) != (app.length -2) ){
+			_ERROR(READ_FAILED,NULL);
+		}
+		print_section_data(data,app.length-2);
+	}
+
+	free(data);
+
+}
+
 void _DQT(int fd)
 {
 	struct QuantizationTable qt;
@@ -308,7 +486,8 @@ int main(int argc, char** argv)
 	while ( read(fd, &byte, 1) )
 	{
 		bool print_it = true;
-		printf("%02hhx ", byte);
+		if (byte != 0xff)
+			printf("%02hhx ", byte);
 		if ( byte == 0xff )
 		{
 			if (read(fd,&byte,1) )
@@ -338,6 +517,9 @@ int main(int argc, char** argv)
 					case 0xe7:
 					case 0xe8:
 						_APPN(fd, byte);
+						break;
+					case 0xed:
+						_APP13(fd);
 						break;
 					case 0xFE:
 						_COMMENT(fd);
